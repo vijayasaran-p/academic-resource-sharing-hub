@@ -8,12 +8,13 @@ A role-based SaaS web application designed for colleges to centralize, discover,
 
 ### Target Users & Roles
 - **Student**: Discovers, searches, bookmarks, downloads academic resources, requests missing materials, and contributes new resources for staff review. Students self-register via the portal.
-- **Staff**: Department faculty / administrators who verify student contributions, approve/reject submissions with feedback, upload official course materials, respond to student requests, and monitor repository statistics. Staff accounts are seeded or created administratively (public registration is disabled).
+- **Staff**: Department faculty / administrators who verify student contributions, approve/reject submissions with feedback, upload official course materials, manage categories (departments, subjects, resource types), respond to student requests, and monitor repository statistics. Staff accounts are seeded or created administratively (public registration is disabled).
 
 ### Tech Stack
 - **Backend**: Node.js + Express.js (RESTful APIs)
 - **Database**: MySQL 8 (Mandatory, using `mysql2/promise` connection pool, no ORM)
 - **Authentication**: JSON Web Token (JWT) + bcrypt password hashing
+- **File Upload**: Multer with extension + MIME-type dual validation & storage abstraction (`src/utils/storage.js`)
 - **Security & Validation**: Helmet, CORS, parameterized SQL queries, express-validator
 - **Frontend** *(Upcoming Milestone)*: React (Vite) + Tailwind CSS
 
@@ -25,39 +26,45 @@ A role-based SaaS web application designed for colleges to centralize, discover,
 dd22/
 ├── backend/
 │   ├── sql/
-│   │   ├── schema.sql              # MySQL DDL for all 9 tables + indexes
-│   │   └── seed.sql                # Departments, subjects, resource types, & demo staff
+│   │   ├── schema.sql              # MySQL DDL for all 9 tables + compound & fulltext indexes
+│   │   └── seed.sql                # Departments, subjects, resource types, staff & demo resources
 │   ├── src/
 │   │   ├── config/
 │   │   │   ├── db.js               # mysql2/promise connection pool
 │   │   │   └── env.js              # Environment variable loader & defaults
 │   │   ├── controllers/
 │   │   │   ├── authController.js   # register, login, getProfile, updateProfile
-│   │   │   └── staffController.js  # Staff route handlers (RBAC demonstration)
+│   │   │   ├── categoryController.js # CRUD for departments, subjects, resource types, academic years
+│   │   │   ├── resourceController.js # Upload, search, filter, paginate, archive, download tracking
+│   │   │   └── staffController.js  # Staff route handlers & ping
 │   │   ├── middleware/
 │   │   │   ├── auth.js             # verifyToken & requireRole RBAC middleware
 │   │   │   ├── errorHandler.js     # 404 handler and centralized JSON error handler
+│   │   │   ├── upload.js           # Multer file validation (ext + MIME + size)
 │   │   │   └── validate.js         # express-validator request validation chains
 │   │   ├── routes/
 │   │   │   ├── authRoutes.js       # /api/auth routes
+│   │   │   ├── categoryRoutes.js   # /api/departments, /api/subjects, /api/resource-types, /api/academic-years
+│   │   │   ├── resourceRoutes.js   # /api/resources routes (public & staff management)
 │   │   │   └── staffRoutes.js      # /api/staff routes (RBAC protected)
 │   │   ├── utils/
-│   │   │   └── hashPassword.js     # CLI tool to generate bcrypt hashes
+│   │   │   ├── hashPassword.js     # CLI tool to generate bcrypt hashes
+│   │   │   └── storage.js          # File storage abstraction (disk/Cloudinary ready)
 │   │   ├── app.js                  # Express app & middleware composition
 │   │   └── server.js               # HTTP server listener & DB connection check
+│   ├── uploads/                    # Local storage directory for uploaded documents
 │   ├── .env.example                # Environment variable template
 │   └── package.json                # Backend dependencies and scripts
 ├── frontend/                       # Placeholder for upcoming React application
 ├── .gitignore                      # Git ignore rules (.env, node_modules, uploads)
-└── README.md                       # Setup guide, API test commands & architecture docs
+└── README.md                       # Setup guide, API documentation table & viva reference
 ```
 
 ---
 
-## 3. Database Setup & Initialization
+## 3. Database Schema & Tables
 
-### Database Schema Summary
-The database consists of 9 normalized relational tables:
+The system uses 9 normalized relational tables:
 1. `departments` (`id`, `name UNIQUE`, `created_at`)
 2. `users` (`id`, `name`, `email UNIQUE`, `password_hash`, `role ENUM('student','staff')`, `department_id`, `created_at`)
 3. `subjects` (`id`, `name`, `department_id`, `year`, `semester`, `created_at`)
@@ -70,254 +77,71 @@ The database consists of 9 normalized relational tables:
 8. `resource_downloads` (`id`, `student_id`, `resource_id`, `downloaded_at`)
 9. `resource_reviews` (`id`, `resource_id`, `staff_id`, `status ENUM(...)`, `remarks`, `reviewed_at`)
 
-### Step-by-Step MySQL Commands
-Open PowerShell / Terminal and run:
+---
 
-```bash
-# 1. Login to MySQL
-mysql -u root -p
+## 4. API Reference Table
 
-# 2. Inside MySQL CLI, run the schema and seed scripts:
-source d:/dd22/backend/sql/schema.sql;
-source d:/dd22/backend/sql/seed.sql;
-```
-
-Alternatively, from standard Command Prompt / Terminal:
-```bash
-# On Windows / Linux:
-mysql -u root -p < backend/sql/schema.sql
-mysql -u root -p < backend/sql/seed.sql
-```
-
-### Initial Seed Data Provided
-- **3 Departments**:
-  - `1`: Artificial Intelligence and Data Science
-  - `2`: Computer Science and Engineering
-  - `3`: Information Technology
-- **8 Resource Types**: Lecture Notes, Question Paper, Question Bank, Lab Manual, Study Materials, PowerPoint Presentations, Syllabus and Course Documents, Project Guidelines.
-- **5 Subjects**: DBMS, Machine Learning, Operating Systems, OOP, Data Structures.
-- **1 Demo Staff User**:
-  - Email: `staff@college.edu`
-  - Password: `Staff@123`
-  - Role: `staff`
-  - Department: AI&DS
+| Method | Endpoint | Access Role | Purpose / Description |
+|---|---|---|---|
+| **GET** | `/api/health` | Public | Health check & environment status |
+| **POST** | `/api/auth/register` | Public (Student) | Self-registration for students (role forced to `student`) |
+| **POST** | `/api/auth/login` | Public | Authenticates student/staff and returns JWT token |
+| **GET** | `/api/auth/me` | Authenticated | Fetches profile of currently logged-in user |
+| **PUT** | `/api/auth/profile` | Authenticated | Updates name and/or department of logged-in user |
+| **GET** | `/api/staff/ping` | Staff only | Verification ping endpoint for RBAC |
+| **GET** | `/api/staff/resources` | Staff only | Staff view of all resources across all statuses with search/pagination |
+| **GET** | `/api/departments` | Authenticated | Lists all academic departments |
+| **POST** | `/api/departments` | Staff only | Creates a new department |
+| **PUT** | `/api/departments/:id` | Staff only | Updates department name |
+| **DELETE** | `/api/departments/:id` | Staff only | Deletes a department (returns 409 if in use) |
+| **GET** | `/api/subjects` | Authenticated | Lists subjects (optional filters: `department_id`, `year`, `semester`) |
+| **POST** | `/api/subjects` | Staff only | Creates a new subject |
+| **PUT** | `/api/subjects/:id` | Staff only | Updates subject details |
+| **DELETE** | `/api/subjects/:id` | Staff only | Deletes a subject (returns 409 if in use) |
+| **GET** | `/api/resource-types` | Authenticated | Lists all 8 resource types |
+| **POST** | `/api/resource-types` | Staff only | Creates a new resource type |
+| **PUT** | `/api/resource-types/:id`| Staff only | Updates a resource type name |
+| **DELETE** | `/api/resource-types/:id`| Staff only | Deletes a resource type (returns 409 if in use) |
+| **GET** | `/api/academic-years` | Authenticated | Returns distinct academic years from resources (e.g. `['2026-27']`) |
+| **GET** | `/api/resources` | Authenticated | Search & browse resources (students only see `PUBLISHED`; supports `q`, filters, pagination, sort) |
+| **GET** | `/api/resources/:id` | Authenticated | Returns full metadata for a resource (student gets 404 if not `PUBLISHED`) |
+| **GET** | `/api/resources/:id/download` | Authenticated | Tracks download for students, then streams file safely |
+| **POST** | `/api/resources` | Staff only | Uploads a new resource (multipart: file + metadata, status `PUBLISHED`) |
+| **PUT** | `/api/resources/:id` | Staff only | Updates metadata or replaces the uploaded document |
+| **PATCH**| `/api/resources/:id/archive` | Staff only | Archives an outdated or retired resource |
+| **DELETE**| `/api/resources/:id` | Staff only | Deletes resource and removes physical file from disk |
 
 ---
 
-## 4. Backend Setup & Running
+## 5. Daily Commands: Starting & Stopping
 
-### Step 1: Install Dependencies
-```bash
-cd backend
-npm install
+### 1. Portable MySQL (Port 3307)
+```cmd
+# Start
+D:\mysql-portable\start-mysql.bat
+
+# Stop
+D:\mysql-portable\stop-mysql.bat
 ```
 
-### Step 2: Configure Environment Variables
-Copy `.env.example` to `.env` in the `backend/` folder:
-```bash
-cp .env.example .env
-```
-Update your database credentials in `backend/.env`:
-```ini
-PORT=5000
-NODE_ENV=development
-CLIENT_ORIGIN=http://localhost:5173
-
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=your_actual_mysql_password
-DB_NAME=academic_resource_hub
-DB_SSL=false
-
-JWT_SECRET=super_secret_jwt_key_second_year_project_2026
-JWT_EXPIRES_IN=24h
-```
-
-### Step 3: Start the Backend Server
-```bash
-# Development mode (with auto-reload on file changes):
+### 2. Backend Server
+```powershell
+cd D:\dd22\backend
 npm run dev
-
-# Or Production mode:
-npm start
-```
-The server will boot on `http://localhost:5000`.
-
----
-
-## 5. Password Hashing Utility
-
-To generate a new bcrypt hash for database seeding or manual credentials:
-```bash
-cd backend
-node src/utils/hashPassword.js [your_password]
-
-# Example:
-node src/utils/hashPassword.js MyStaffPass@2026
 ```
 
 ---
 
-## 6. Authentication Flow & RBAC Architecture
+## 6. Viva-Ready Technical Explanations
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client as Frontend / Client
-    participant Auth as Auth Controller
-    participant DB as MySQL Database
-    participant Middleware as verifyToken & requireRole
+### Dynamic Search & Filtering Implementation
+- **FULLTEXT with LIKE Fallback**: In `resourceController.js`, queries use MySQL's `MATCH(r.title, r.description) AGAINST(? IN BOOLEAN MODE)` utilizing the composite FULLTEXT index. Because InnoDB full-text token indexing has a minimum word length threshold (typically 3–4 characters), queries with terms shorter than 4 characters (e.g. "AI", "OS", "DB") gracefully fall back to `(r.title LIKE ? OR r.description LIKE ?)`.
+- **Relational Joins**: Filters for `department`, `year`, and `semester` are resolved by `JOIN subjects s ON r.subject_id = s.id` and `JOIN departments d ON s.department_id = d.id`.
+- **SQL Injection Prevention**: Every user-supplied filter value is pushed to a `params` array and passed to `pool.query(sql, params)`. The `sort` parameter is strictly whitelisted against allowed column mappings (`newest`, `oldest`, `title`).
+- **Student Data Isolation**: For `GET /api/resources`, `r.status = 'PUBLISHED'` is hardcoded into the query criteria, ensuring students can never inspect unapproved, pending, or archived resources.
 
-    Note over Client, DB: 1. Registration (Students Only)
-    Client->>Auth: POST /api/auth/register {name, email, password, department_id}
-    Auth->>DB: Check if department exists & email is unique
-    Auth->>Auth: bcrypt.hash(password, 10) & force role='student'
-    Auth->>DB: INSERT INTO users ... role='student'
-    Auth-->>Client: 201 Created {user}
-
-    Note over Client, DB: 2. Login (Student or Staff)
-    Client->>Auth: POST /api/auth/login {email, password}
-    Auth->>DB: SELECT * FROM users WHERE email=?
-    Auth->>Auth: bcrypt.compare(password, password_hash)
-    Auth->>Auth: jwt.sign({id, email, role}, secret, {expiresIn})
-    Auth-->>Client: 200 OK {token, user}
-
-    Note over Client, DB: 3. Protected Request & Role Check
-    Client->>Middleware: GET /api/staff/ping (Headers: Authorization: Bearer <token>)
-    Middleware->>Middleware: jwt.verify(token) -> req.user = {id, email, role}
-    alt User has required 'staff' role
-        Middleware->>Client: 200 OK Staff ping successful
-    else User has 'student' role
-        Middleware-->>Client: 403 Forbidden: Insufficient permissions
-    end
-```
-
-### Key Security Design Choices:
-1. **Server-Enforced Role**: The registration route strictly hardcodes `role = 'student'`. Even if a client includes `"role": "staff"` in their JSON payload, it is completely ignored.
-2. **Password Security**: Passwords are never stored in plaintext. They are salted and hashed using bcrypt (10 rounds). The `password_hash` column is explicitly excluded from all API responses.
-3. **Stateless JWT Authorization**: Requests to protected routes supply `Authorization: Bearer <token>`. The `verifyToken` middleware decodes the token and attaches `req.user` (`id`, `email`, `role`).
-4. **Role-Based Access Control (RBAC)**: The `requireRole(...roles)` middleware inspects `req.user.role`. If a student attempts to access a staff-only route, a 403 Forbidden is immediately returned.
-5. **SQL Injection Defense**: Every database operation uses parameterized queries (`?` placeholders via `mysql2/promise`).
-
----
-
-## 7. API Testing Guide (cURL & PowerShell)
-
-### A. Health Check
-```bash
-curl -X GET http://localhost:5000/api/health
-```
-
----
-
-### B. Register a Student Account (`POST /api/auth/register`)
-```bash
-curl -X POST http://localhost:5000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Arun Kumar",
-    "email": "arun.student@college.edu",
-    "password": "Password@123",
-    "department_id": 1
-  }'
-```
-
-*Response (201 Created):*
-```json
-{
-  "success": true,
-  "message": "Student account registered successfully.",
-  "data": {
-    "user": {
-      "id": 2,
-      "name": "Arun Kumar",
-      "email": "arun.student@college.edu",
-      "role": "student",
-      "department_id": 1,
-      "department_name": "Artificial Intelligence and Data Science"
-    }
-  }
-}
-```
-
----
-
-### C. Log In as the Student (`POST /api/auth/login`)
-```bash
-curl -X POST http://localhost:5000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "arun.student@college.edu",
-    "password": "Password@123"
-  }'
-```
-*Save the returned `token` as `STUDENT_TOKEN`.*
-
----
-
-### D. Log In as the Seed Staff Member (`POST /api/auth/login`)
-```bash
-curl -X POST http://localhost:5000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "staff@college.edu",
-    "password": "Staff@123"
-  }'
-```
-*Save the returned `token` as `STAFF_TOKEN`.*
-
----
-
-### E. Get Current User Profile (`GET /api/auth/me`)
-```bash
-curl -X GET http://localhost:5000/api/auth/me \
-  -H "Authorization: Bearer <STUDENT_TOKEN>"
-```
-
----
-
-### F. Update Profile (`PUT /api/auth/profile`)
-```bash
-curl -X PUT http://localhost:5000/api/auth/profile \
-  -H "Authorization: Bearer <STUDENT_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Arun K."
-  }'
-```
-
----
-
-### G. Test Staff Route Protection (`GET /api/staff/ping`)
-
-#### 1. Student Attempt (Should fail with 403 Forbidden):
-```bash
-curl -X GET http://localhost:5000/api/staff/ping \
-  -H "Authorization: Bearer <STUDENT_TOKEN>"
-```
-*Expected Response:*
-```json
-{
-  "success": false,
-  "message": "Forbidden: Access requires one of [staff] role. Current role: 'student'"
-}
-```
-
-#### 2. Staff Attempt (Should succeed with 200 OK):
-```bash
-curl -X GET http://localhost:5000/api/staff/ping \
-  -H "Authorization: Bearer <STAFF_TOKEN>"
-```
-*Expected Response:*
-```json
-{
-  "success": true,
-  "message": "Staff route ping successful. Welcome, staff@college.edu!",
-  "data": {
-    "staff_id": 1,
-    "role": "staff",
-    "timestamp": "..."
-  }
-}
-```
+### File Upload & Validation Architecture
+- **Dual Validation**: `middleware/upload.js` inspects both the file extension (`.pdf, .doc, .docx, .ppt, .pptx, .xls, .xlsx, .txt, .zip`) and the HTTP `Content-Type` MIME header. Executable binaries (e.g., `.exe`, `.bat`, `.sh`) are rejected with an explicit HTTP 400.
+- **Size Limitation**: The upload size limit is enforced by Multer via `MAX_FILE_SIZE_MB` (default: 10 MB) configured in `.env`.
+- **Protected Storage Abstraction**: Files are saved with a cryptographically generated prefix (`<random_hex>-<timestamp><ext>`) via `utils/storage.js`. Uploads are **never served statically**; clients can only download files through the authenticated `/api/resources/:id/download` route, ensuring access checks and audit tracking.
+- **Cloud Readiness**: Moving to Cloudinary or AWS S3 in deployment only requires updating `utils/storage.js` without modifying any route or controller code.

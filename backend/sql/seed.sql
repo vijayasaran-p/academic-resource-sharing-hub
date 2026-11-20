@@ -64,3 +64,51 @@ ON DUPLICATE KEY UPDATE
   password_hash = VALUES(password_hash),
   role = VALUES(role),
   department_id = VALUES(department_id);
+
+-- ----------------------------------------------------------------------------
+-- 5. Seed Initial Demo Resources (Published)
+-- Clearly labelled demo materials with verified files
+-- ----------------------------------------------------------------------------
+INSERT INTO resources (id, title, description, subject_id, resource_type_id, uploaded_by, file_path, academic_year, status) VALUES
+  (
+    1,
+    'DBMS Unit 1 Relational Model & SQL Lecture Notes',
+    'Comprehensive lecture notes covering relational algebra, normalization up to BCNF, and SQL DDL/DML queries.',
+    1,
+    1,
+    1,
+    'demo-dbms-notes.pdf',
+    '2026-27',
+    'PUBLISHED'
+  ),
+  (
+    2,
+    'Operating Systems IA-1 Model Question Paper 2026',
+    'Internal assessment practice question paper covering process management, CPU scheduling algorithms, and IPC.',
+    3,
+    2,
+    1,
+    'demo-os-qp.pdf',
+    '2026-27',
+    'PUBLISHED'
+  ),
+  (
+    3,
+    'Machine Learning Techniques Lab Manual with Python Exercises',
+    'Laboratory manual containing regression, classification, clustering implementations and sample datasets.',
+    2,
+    4,
+    1,
+    'demo-ml-manual.pdf',
+    '2026-27',
+    'PUBLISHED'
+  )
+ON DUPLICATE KEY UPDATE
+  title = VALUES(title),
+  description = VALUES(description),
+  subject_id = VALUES(subject_id),
+  resource_type_id = VALUES(resource_type_id),
+  uploaded_by = VALUES(uploaded_by),
+  file_path = VALUES(file_path),
+  academic_year = VALUES(academic_year),
+  status = VALUES(status);

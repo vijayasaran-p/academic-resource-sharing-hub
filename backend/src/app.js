@@ -10,6 +10,8 @@ const helmet = require('helmet');
 const env = require('./config/env');
 const authRoutes = require('./routes/authRoutes');
 const staffRoutes = require('./routes/staffRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const resourceRoutes = require('./routes/resourceRoutes');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -42,6 +44,8 @@ app.get('/api/health', (req, res) => {
 // 5. API Feature Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/staff', staffRoutes);
+app.use('/api', categoryRoutes);
+app.use('/api/resources', resourceRoutes);
 
 // 6. 404 Undefined Route Handler
 app.use(notFoundHandler);

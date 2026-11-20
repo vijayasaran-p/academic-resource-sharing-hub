@@ -34,6 +34,9 @@ const env = {
     secret: process.env.JWT_SECRET || 'academic_resource_hub_super_secret_jwt_key_2026',
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   },
+
+  // Upload limits
+  maxFileSizeMB: parseInt(process.env.MAX_FILE_SIZE_MB, 10) || 10,
 };
 
 module.exports = env;
